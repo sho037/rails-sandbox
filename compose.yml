@@ -1,0 +1,25 @@
+services:
+  web:
+    container_name: app
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      args:
+        RUBY_VERSION: "3.4.4"
+    environment:
+      RAILS_ENV: development
+      RAILS_LOG_TO_STDOUT: "1"
+    volumes:
+      - .:/app:cached
+      - bundle:/bundle
+    ports:
+      - "3000:3000"
+    stdin_open: true
+    tty: true
+    # 通常のLinux環境と同じようにinitプロセスを使う
+    init: true
+    # command:
+    #   /bin/sh -c "while true; do ls; sleep 1; done"
+
+volumes:
+  bundle:

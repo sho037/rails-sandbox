@@ -1,0 +1,43 @@
+#!/usr/bin/env ruby
+module Puma
+  class Cluster < Runner
+    # ...
+    def wait_workers
+      reaped_children = {}
+      loop do
+        begin
+          pid, status = Process.wait2(-1, Process::WNOHANG)
+          break unless pid
+          reaped_children[pid] = status
+        rescue Errno::ECHILD
+          break
+        end
+      end
+
+      @workers.reject! do |w|
+        next false if w.pid.nil?
+        begin
+          if reaped_children.delete(w.pid) || Process.wait(w.pid, Process::WNOHANG)
+            true
+          else
+            w.term if w.term?
+            nil
+          end
+        rescue Errno::ECHILD
+          begin
+            Process.kill(0, w.pid)
+            w.term if w.term?
+            false
+          rescue Errno::ESRCH, Errno::EPERM
+            true
+          end
+        end
+      end
+
+      reaped_children.each do |pid, status|
+        log "! reaped unknown child process pid=#{pid} status=#{status}"
+      end
+    end
+    # ...
+  end
+end

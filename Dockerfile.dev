@@ -1,0 +1,52 @@
+
+# 開発用。ホットリロード前提でボリュームをマウントして使います。
+# 使い方:
+#   docker compose up --build
+#
+# メモ:
+# - DB は SQLite を前提。外部DB(PostgreSQL/MySQL)を使うなら compose を調整してください。
+# - bin/dev があれば自動使用。無ければ rails s で起動。
+# - 依存gemのキャッシュは /bundle をボリューム化して高速化。
+
+ARG RUBY_VERSION=3.4.4
+FROM docker.io/library/ruby:${RUBY_VERSION}-slim
+
+ENV LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    APP_HOME=/app \
+    RAILS_ENV=development \
+    BUNDLE_PATH=/bundle \
+    BUNDLE_JOBS=4 \
+    BUNDLE_RETRY=3
+
+WORKDIR ${APP_HOME}
+
+# 必要パッケージ: ビルド系 + SQLite + 画像(libvips) + git
+# (Nodeが必要な場合は nodejs を追加; 必要なければ外してOK)
+RUN apt-get update -qq && \
+    apt-get install --no-install-recommends -y \
+      build-essential git curl libyaml-dev pkg-config \
+      libvips sqlite3 nodejs procps && \
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
+
+# 先に Gemfile* だけコピーして bundle install を済ませる（キャッシュ層）
+COPY Gemfile Gemfile.lock ./
+RUN bundle install && \
+    rm -rf ~/.bundle ${BUNDLE_PATH}/ruby/*/cache
+
+# アプリ本体
+COPY . .
+
+# 開発では bootsnap のキャッシュ先を gem と同じボリュームへ
+ENV BOOTSNAP_CACHE_DIR=/bundle/bootsnap
+
+# 非root（UID/GID=1000）で実行し、ホストとの権限差異を減らす
+RUN groupadd --system --gid 1000 app && \
+    useradd app --uid 1000 --gid 1000 --create-home --shell /bin/bash && \
+    chown -R app:app ${APP_HOME}
+USER 1000:1000
+
+EXPOSE 3000
+
+# 起動時に DB を用意してから bin/dev か rails s を走らせる
+CMD ["sh", "-c", "mkdir -p tmp/pids && rm -f tmp/pids/server.pid && bundle exec rails db:prepare && exec bundle exec rails s -b 0.0.0.0 -p 3000"]
